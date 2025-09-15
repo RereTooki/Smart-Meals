@@ -3,7 +3,7 @@ import React from "react";
 const Homepage = () => {
   return (
     <>
-      <div>Smart Meal Planner</div>
+      <div className=" border-4 h-screen">Smart Meal Planner</div>
     </>
   );
 };
