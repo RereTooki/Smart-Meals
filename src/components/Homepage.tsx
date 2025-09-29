@@ -1,9 +1,28 @@
+import { useEffect } from "react";
 import Navbar from "./Navbar";
 import Footer from "./Footer";
 import { Link } from "react-router-dom";
-import heroImg from "../assets/images/hero-meal.jpg"; // make sure you add an image in assets/images
+import heroImg from "../assets/images/hero-meal.jpg"; // make sure you add an image
+import { db } from "../firebase/config";
+import { collection, getDocs } from "firebase/firestore";
 
 const Homepage = () => {
+  // 🔥 Firebase test setup
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "test")); // "test" is your Firestore collection name
+        querySnapshot.forEach((doc) => {
+          console.log(`${doc.id} =>`, doc.data());
+        });
+      } catch (error) {
+        console.error("Error fetching Firestore data:", error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
   return (
     <div className="flex flex-col min-h-screen">
       <Navbar />
