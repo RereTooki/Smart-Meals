@@ -1,15 +1,12 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import "./App.css";
-import Homepage from "./components/Homepage";
+import { RouterProvider } from "react-router-dom";
+import router from "./routes";
 import { Analytics } from "@vercel/analytics/react";
+import "./App.css";
 
 function App() {
-  const [count, setCount] = useState(0);
-
   return (
     <>
-      <Homepage />
+      <RouterProvider router={router} />
       <Analytics />
     </>
   );
