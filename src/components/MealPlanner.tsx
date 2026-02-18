@@ -83,16 +83,12 @@ const MealPlanner = () => {
     setAiError("");
     setAiLoading(true);
     try {
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) {
-        throw new Error("You must be signed in to generate a smart plan.");
-      }
-
+      const apiKey = import.meta.env.VITE_API_KEY;
       const response = await fetch(aiEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey ?? "",
         },
         body: JSON.stringify({
           diet,

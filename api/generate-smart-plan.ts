@@ -1,6 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import admin from 'firebase-admin';
-import { OpenAI } from 'openai';
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 type AiMealRequest = {
   diet: string;
@@ -10,138 +8,108 @@ type AiMealRequest = {
   userNotes?: string;
 };
 
-type AiMeal = {
+type Meal = {
   name: string;
   calories: number;
   cost: number;
-  cuisine?: string;
-  description?: string;
+  dietTags: string[];
+  description: string;
 };
 
 type AiMealResponse = {
-  meals: AiMeal[];
+  meals: { name: string; calories: number; cost: number; description: string }[];
   summary: string;
 };
 
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const MEAL_LIBRARY: Meal[] = [
+  { name: "Grilled Chicken Salad", calories: 350, cost: 1500, dietTags: ["normal", "keto"], description: "High-protein, leafy greens" },
+  { name: "Spiced Lentil Stew", calories: 420, cost: 1200, dietTags: ["vegetarian", "vegan"], description: "Rich in fiber and spices" },
+  { name: "Quinoa & Roasted Veggie Bowl", calories: 460, cost: 1300, dietTags: ["normal", "vegan"], description: "Whole grains + seasonal veg" },
+  { name: "Avocado Egg Toast", calories: 400, cost: 1100, dietTags: ["normal", "vegetarian"], description: "Healthy fats + protein" },
+  { name: "Spicy Fish Tacos", calories: 520, cost: 1600, dietTags: ["normal"], description: "Lean fish with peppers" },
+  { name: "Curried Chickpea Wrap", calories: 430, cost: 1000, dietTags: ["vegetarian"], description: "Legumes + warm spices" },
+  { name: "Zesty Tofu Stir-fry", calories: 380, cost: 1250, dietTags: ["vegan"], description: "Tofu + crunchy veg" },
+  { name: "Grilled Steak & Kale", calories: 540, cost: 1900, dietTags: ["normal", "keto"], description: "Iron-rich with greens" },
+  { name: "Sweet Plantain Porridge", calories: 480, cost: 900, dietTags: ["vegetarian"], description: "Comforting millet base" },
+  { name: "Garlic Shrimp & Couscous", calories: 450, cost: 1500, dietTags: ["normal"], description: "Lean protein with grains" },
+];
 
-const getOpenAI = () => {
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) {
-    throw new Error('OPENAI_API_KEY is required.');
+const ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
+
+const buildCorsHeaders = (origin?: string) => {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-API-KEY",
+  };
+};
+
+const respond = (res: VercelResponse, status: number, body: unknown, origin?: string) => {
+  Object.entries(buildCorsHeaders(origin)).forEach(([key, value]) => res.setHeader(key, value));
+  res.status(status).json(body);
+};
+
+const API_KEY = process.env.AI_API_KEY;
+
+const generatePlan = (payload: AiMealRequest) => {
+  const filterTag = payload.diet?.toLowerCase() || "normal";
+  const budgetPerMeal = payload.budget || 0;
+  const pool = MEAL_LIBRARY.filter((meal) => meal.dietTags.includes(filterTag));
+  const sanitizedPool = pool.length ? pool : MEAL_LIBRARY;
+
+  const plan: AiMealResponse["meals"] = [];
+  for (let i = 0; i < payload.mealsPerDay; i++) {
+    const choice = sanitizedPool[(Math.random() * sanitizedPool.length) | 0];
+    const adjustedCost = Math.max(350, Math.min(choice.cost, budgetPerMeal || choice.cost));
+    plan.push({
+      name: choice.name,
+      calories: choice.calories,
+      cost: adjustedCost,
+      description: choice.description,
+    });
   }
-  return new OpenAI({ apiKey: openaiKey });
-};
 
-const initFirebaseAdmin = () => {
-  if (admin.apps.length) return;
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!serviceAccount) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT must be set before verifying tokens.');
-  }
-  admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(serviceAccount)),
-  });
-};
-
-const buildPrompt = (data: AiMealRequest) => {
-  const preferenceList = data.preferences
-    ? Object.entries(data.preferences)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(', ')
-    : 'None';
-
-  return `Create ${data.mealsPerDay} balanced meals for a ${data.diet} diet that satisfies a daily budget of ${data.budget} Naira. Include cost and calories for each meal, keep descriptions concise, and respect any user preferences: ${preferenceList}. ${
-    data.userNotes ? `Extra notes: ${data.userNotes}.` : ''
-  } Output strictly valid JSON of the form {"meals": [{"name": "", "calories": 0, "cost": 0, "description": ""}], "summary": ""}.`;
-};
-
-const validatePayload = (body: unknown): body is AiMealRequest => {
-  if (!body || typeof body !== 'object') return false;
-  const payload = body as Record<string, unknown>;
-  const isNumber = (value: unknown) => typeof value === 'number' && !Number.isNaN(value);
-  return (
-    typeof payload.diet === 'string' &&
-    isNumber(payload.budget) &&
-    isNumber(payload.mealsPerDay)
-  );
+  const summary = `Generated ${plan.length} ${payload.diet} meal${plan.length === 1 ? "" : "s"} that stay within a daily budget of ₦${payload.budget}.`;
+  return { meals: plan, summary };
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
-  }
-
-  const authHeader = req.headers.authorization ?? '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-  if (!token) {
-    res.status(401).json({ error: 'Missing authentication token.' });
-    return;
-  }
-
-  let payload: AiMealRequest;
-  if (!validatePayload(req.body)) {
-    res.status(400).json({ error: 'Required parameters missing (diet, budget, mealsPerDay).' });
-    return;
-  }
-  payload = req.body;
-
-  try {
-    initFirebaseAdmin();
-    await admin.auth().verifyIdToken(token);
-  } catch (error) {
-    console.error('Token verification failed', error);
-    res.status(401).json({ error: 'Invalid or expired Firebase token.' });
-    return;
-  }
-
-  const prompt = buildPrompt(payload);
-
-  try {
-    const openai = getOpenAI();
-    const completion = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a helpful nutrition assistant that creates affordable, culturally aware meal plans. Always return JSON only.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.65,
-      max_tokens: 900,
-    });
-
-    const raw = completion.choices?.[0]?.message?.content?.trim() ?? '';
-    if (!raw) {
-      throw new Error('Empty response from OpenAI.');
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (err) {
-      throw new Error(`Invalid JSON from OpenAI: ${err instanceof Error ? err.message : err}`);
-    }
-
-    const parsedObj = parsed as { meals?: AiMeal[]; summary?: string };
-    const meals = (Array.isArray(parsedObj.meals) ? parsedObj.meals : []).map((meal) => ({
-      name: String(meal.name ?? 'Meal'),
-      calories: Number(meal.calories ?? 0),
-      cost: Number(meal.cost ?? 0),
-      cuisine: meal.cuisine ? String(meal.cuisine) : undefined,
-      description: meal.description ? String(meal.description) : undefined,
-    }));
-
-    const summary = String(
-      parsedObj.summary ?? `Customized ${meals.length} meal(s) for a ${payload.diet} diet.`
+  if (req.method === "OPTIONS") {
+    Object.entries(buildCorsHeaders(req.headers.origin as string | undefined)).forEach(([key, value]) =>
+      res.setHeader(key, value)
     );
-
-    res.status(200).json({ meals, summary });
-  } catch (error) {
-    console.error('AI plan generation failed', error);
-    res.status(500).json({ error: 'Unable to generate a smart plan at the moment.' });
+    res.status(204).send("");
+    return;
   }
+
+  if (req.method !== "POST") {
+    respond(res, 405, { error: "Method not allowed" }, req.headers.origin as string | undefined);
+    return;
+  }
+
+  const key = req.headers["x-api-key"];
+  if (!API_KEY || key !== API_KEY) {
+    respond(res, 401, { error: "Invalid API key." }, req.headers.origin as string | undefined);
+    return;
+  }
+
+  const payload = req.body as AiMealRequest;
+  if (
+    !payload ||
+    typeof payload.diet !== "string" ||
+    typeof payload.budget !== "number" ||
+    typeof payload.mealsPerDay !== "number"
+  ) {
+    respond(
+      res,
+      400,
+      { error: "Required parameters missing (diet, budget, mealsPerDay)." },
+      req.headers.origin as string | undefined
+    );
+    return;
+  }
+
+  const generated = generatePlan(payload);
+  respond(res, 200, generated, req.headers.origin as string | undefined);
 }
