@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow the public homepage test collection to be read by anyone for demo data.
+    match /test/{document=**} {
+      allow read: if true;
+    }
+
+    // Each authenticated user can read/write only their own profile, preferences, and meal plans.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /mealPlans/{planId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}
