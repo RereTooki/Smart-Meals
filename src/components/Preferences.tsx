@@ -95,7 +95,7 @@ const Preferences = () => {
           {/* Budget */}
           <div>
             <label className="block text-gray-700 font-medium mb-2">
-              Daily Budget (₦)
+              Daily Budget in (₦)
             </label>
             <input
               type="number"
