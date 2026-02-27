@@ -8,33 +8,32 @@ type AiMealRequest = {
   userNotes?: string;
 };
 
-type Meal = {
+type AiMeal = {
   name: string;
   calories: number;
   cost: number;
-  dietTags: string[];
   description: string;
 };
 
 type AiMealResponse = {
-  meals: { name: string; calories: number; cost: number; description: string }[];
+  meals: AiMeal[];
   summary: string;
 };
 
-const MEAL_LIBRARY: Meal[] = [
-  { name: "Grilled Chicken Salad", calories: 350, cost: 1500, dietTags: ["normal", "keto"], description: "High-protein, leafy greens" },
-  { name: "Spiced Lentil Stew", calories: 420, cost: 1200, dietTags: ["vegetarian", "vegan"], description: "Rich in fiber and spices" },
-  { name: "Quinoa & Roasted Veggie Bowl", calories: 460, cost: 1300, dietTags: ["normal", "vegan"], description: "Whole grains + seasonal veg" },
-  { name: "Avocado Egg Toast", calories: 400, cost: 1100, dietTags: ["normal", "vegetarian"], description: "Healthy fats + protein" },
-  { name: "Spicy Fish Tacos", calories: 520, cost: 1600, dietTags: ["normal"], description: "Lean fish with peppers" },
-  { name: "Curried Chickpea Wrap", calories: 430, cost: 1000, dietTags: ["vegetarian"], description: "Legumes + warm spices" },
-  { name: "Zesty Tofu Stir-fry", calories: 380, cost: 1250, dietTags: ["vegan"], description: "Tofu + crunchy veg" },
-  { name: "Grilled Steak & Kale", calories: 540, cost: 1900, dietTags: ["normal", "keto"], description: "Iron-rich with greens" },
-  { name: "Sweet Plantain Porridge", calories: 480, cost: 900, dietTags: ["vegetarian"], description: "Comforting millet base" },
-  { name: "Garlic Shrimp & Couscous", calories: 450, cost: 1500, dietTags: ["normal"], description: "Lean protein with grains" },
-];
-
+const API_KEY = process.env.AI_API_KEY;
+const COHERE_KEY = process.env.COHERE_API_KEY;
+const COHERE_MODEL = process.env.COHERE_MODEL || "command";
 const ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
+
+const buildPrompt = (data: AiMealRequest) => {
+  const preferenceList = data.preferences
+    ? Object.entries(data.preferences)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(", ")
+    : "None";
+
+  return `Create ${data.mealsPerDay} balanced meals for a ${data.diet} diet that satisfies a daily budget of ${data.budget} Naira. Include cost and calories for each meal, keep descriptions concise, and respect any user preferences: ${preferenceList}. ${data.userNotes ? `Extra notes: ${data.userNotes}.` : ""} Output strictly valid JSON of the form {"meals": [{"name": "", "calories": 0, "cost": 0, "description": ""}], "summary": ""}.`;
+};
 
 const buildCorsHeaders = (origin?: string) => {
   const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -50,28 +49,41 @@ const respond = (res: VercelResponse, status: number, body: unknown, origin?: st
   res.status(status).json(body);
 };
 
-const API_KEY = process.env.AI_API_KEY;
-
-const generatePlan = (payload: AiMealRequest) => {
-  const filterTag = payload.diet?.toLowerCase() || "normal";
-  const budgetPerMeal = payload.budget || 0;
-  const pool = MEAL_LIBRARY.filter((meal) => meal.dietTags.includes(filterTag));
-  const sanitizedPool = pool.length ? pool : MEAL_LIBRARY;
-
-  const plan: AiMealResponse["meals"] = [];
-  for (let i = 0; i < payload.mealsPerDay; i++) {
-    const choice = sanitizedPool[(Math.random() * sanitizedPool.length) | 0];
-    const adjustedCost = Math.max(350, Math.min(choice.cost, budgetPerMeal || choice.cost));
-    plan.push({
-      name: choice.name,
-      calories: choice.calories,
-      cost: adjustedCost,
-      description: choice.description,
-    });
+const callCohere = async (prompt: string) => {
+  if (!COHERE_KEY) {
+    throw new Error("COHERE_API_KEY is required.");
   }
 
-  const summary = `Generated ${plan.length} ${payload.diet} meal${plan.length === 1 ? "" : "s"} that stay within a daily budget of ₦${payload.budget}.`;
-  return { meals: plan, summary };
+  const response = await fetch("https://api.cohere.ai/v1/chat", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${COHERE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: COHERE_MODEL,
+      messages: [
+        {
+          role: "system",
+          content: "You are a nutrition assistant that replies in JSON."
+        },
+        {
+          role: "user",
+          content: prompt.replace(/\\s+/g, " ").trim() || "Create a budget-friendly vegetarian plan."
+        },
+      ],
+      max_tokens: 600,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Cohere inference failed (${response.status}): ${body}`);
+  }
+
+  const data = await response.json();
+  return data.generations?.[0]?.message?.content ?? "";
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -97,6 +109,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const payload = req.body as AiMealRequest;
   if (
     !payload ||
+    typeof payload !== "object" ||
     typeof payload.diet !== "string" ||
     typeof payload.budget !== "number" ||
     typeof payload.mealsPerDay !== "number"
@@ -110,6 +123,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const generated = generatePlan(payload);
-  respond(res, 200, generated, req.headers.origin as string | undefined);
+  const prompt = buildPrompt(payload);
+
+  try {
+    const raw = (await callCohere(prompt)).trim();
+    if (!raw) {
+      throw new Error("Empty response from Cohere.");
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(`Invalid JSON from Cohere: ${err instanceof Error ? err.message : err}`);
+    }
+
+    const parsedObj = parsed as { meals?: AiMeal[]; summary?: string };
+    const meals = (Array.isArray(parsedObj.meals) ? parsedObj.meals : []).map((meal) => ({
+      name: String(meal.name ?? "Meal"),
+      calories: Number(meal.calories ?? 0),
+      cost: Number(meal.cost ?? 0),
+      description: meal.description ? String(meal.description) : "",
+    }));
+
+    const summary = String(parsedObj.summary ?? `Customized ${meals.length} meal(s) for a ${payload.diet} diet.`);
+    respond(res, 200, { meals, summary }, req.headers.origin as string | undefined);
+  } catch (error) {
+    console.error("AI plan generation failed", error);
+    respond(res, 500, { error: "Unable to generate a smart plan at the moment." }, req.headers.origin as string | undefined);
+  }
 }
