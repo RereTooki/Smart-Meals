@@ -82,6 +82,11 @@ const MealPlanner = () => {
   }, [navigate]);
 
   const generateMealPlan = async () => {
+    if (budget <= 0) {
+      setStatusMessage("Daily budget must be greater than zero to generate a plan.");
+      return;
+    }
+
     setSaveMessage("");
     setStatusMessage("Generating a personalized plan...");
     setPlanSummary("");
