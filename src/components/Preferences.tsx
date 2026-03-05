@@ -29,7 +29,7 @@ const Preferences = () => {
           }
         }
       } else {
-        navigate("/auth");
+        navigate("/login");
       }
       setLoading(false);
     });

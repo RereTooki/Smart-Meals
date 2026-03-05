@@ -5,7 +5,8 @@ import Dashboard from "./components/Dashboard";
 import MealPlanner from "./components/MealPlanner";
 import Preferences from "./components/Preferences";
 import Profile from "./components/Profile";
-import Auth from "./components/Auth";
+import Login from "./components/Login";
+import Signup from "./components/Signup";
 
 const router = createBrowserRouter([
   { path: "/", element: <Homepage /> },
@@ -14,7 +15,8 @@ const router = createBrowserRouter([
   { path: "/meal-planner", element: <MealPlanner /> },
   { path: "/preferences", element: <Preferences /> },
   { path: "/profile", element: <Profile /> },
-  { path: "/auth", element: <Auth /> },
+  { path: "/login", element: <Login /> },
+  { path: "/signup", element: <Signup /> },
 ]);
 
 export default router;

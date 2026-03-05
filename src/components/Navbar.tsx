@@ -35,12 +35,20 @@ const Navbar = () => {
         </div>
 
         {/* CTA */}
-        <Link
-          to="/auth"
-          className="bg-emerald-600 text-white px-5 py-2 rounded-lg shadow hover:bg-emerald-700 transition-colors"
-        >
-          Get Started
-        </Link>
+        <div className="flex items-center space-x-3">
+          <Link
+            to="/login"
+            className="text-gray-700 font-medium hover:text-emerald-600 transition-colors"
+          >
+            Log in
+          </Link>
+          <Link
+            to="/signup"
+            className="bg-emerald-600 text-white px-5 py-2 rounded-lg shadow hover:bg-emerald-700 transition-colors"
+          >
+            Sign Up
+          </Link>
+        </div>
       </div>
     </nav>
   );

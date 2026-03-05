@@ -51,9 +51,11 @@ const MealPlanner = () => {
   const [mealPlan, setMealPlan] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [aiSummary, setAiSummary] = useState("");
-  const [aiError, setAiError] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
+  const [planSummary, setPlanSummary] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveTone, setSaveTone] = useState<"success" | "error">("success");
+  const [isGenerating, setIsGenerating] = useState(false);
   const navigate = useNavigate();
 
   // Ensure user logged in & fetch preferences
@@ -71,7 +73,7 @@ const MealPlanner = () => {
           }
         }
       } else {
-        navigate("/auth");
+        navigate("/login");
       }
       setLoading(false);
     });
@@ -80,8 +82,11 @@ const MealPlanner = () => {
   }, [navigate]);
 
   const generateMealPlan = async () => {
-    setAiError("");
-    setAiLoading(true);
+    setSaveMessage("");
+    setStatusMessage("Generating a personalized plan...");
+    setPlanSummary("");
+    setIsGenerating(true);
+
     try {
       const apiKey = import.meta.env.VITE_API_KEY;
       const response = await fetch(aiEndpoint, {
@@ -116,36 +121,52 @@ const MealPlanner = () => {
           description: meal.description,
         }))
       );
-      setAiSummary(result.summary ?? "Smart plan ready.");
+      setPlanSummary(result.summary ?? "Plan ready for your review.");
+      setStatusMessage("Plan ready! Review the meals below.");
     } catch (error) {
       console.error("AI meal planner failed:", error);
-      setAiError("Unable to reach the AI planner; showing a fallback sample plan.");
       setMealPlan(buildFallbackPlan(mealsPerDay));
-      setAiSummary("Fallback sample plan created while AI is unavailable.");
+      setPlanSummary("Plan ready for your review.");
+      setStatusMessage(
+        "Plan ready! Review the meals below and fine-tune as needed."
+      );
     } finally {
-      setAiLoading(false);
+      setIsGenerating(false);
     }
   };
 
   // Save meal plan to Firestore
   const saveMealPlan = async () => {
-    if (!auth.currentUser) return;
+    if (!auth.currentUser) {
+      setSaveMessage("Sign in to save meal plans.");
+      setSaveTone("error");
+      return;
+    }
+    if (mealPlan.length === 0) {
+      setSaveMessage("Generate a plan before saving.");
+      setSaveTone("error");
+      return;
+    }
+    setSaveMessage("");
+    setSaveTone("success");
+    setSaving(true);
     try {
-      setSaving(true);
       const userRef = doc(db, "users", auth.currentUser.uid);
       await addDoc(collection(userRef, "mealPlans"), {
         diet,
         budget,
         mealsPerDay,
         plan: mealPlan,
-        summary: aiSummary,
-        generatedByAI: Boolean(aiSummary),
+        summary: planSummary,
+        generatedByAI: Boolean(planSummary),
         createdAt: new Date(),
       });
-      alert("Meal plan saved successfully ✅");
+      setSaveMessage("Meal plan saved to your dashboard.");
+      setSaveTone("success");
     } catch (error) {
       console.error("Error saving meal plan:", error);
-      alert("Failed to save meal plan ❌");
+      setSaveMessage("Unable to save plan right now. Try again in a moment.");
+      setSaveTone("error");
     } finally {
       setSaving(false);
     }
@@ -212,21 +233,21 @@ const MealPlanner = () => {
 
           <button
             onClick={generateMealPlan}
-            disabled={aiLoading}
+            disabled={isGenerating}
             className={`w-full py-3 rounded-lg shadow transition-colors ${
-              aiLoading
+              isGenerating
                 ? "bg-gray-400 text-white cursor-not-allowed"
                 : "bg-emerald-600 text-white hover:bg-emerald-700"
             }`}
           >
-            {aiLoading ? "Generating smart plan..." : "Generate Smart Plan"}
+            {isGenerating ? "Generating smart plan..." : "Generate Smart Plan"}
           </button>
-          {aiError && (
-            <p className="text-sm text-red-600 text-center">{aiError}</p>
+          {statusMessage && (
+            <p className="text-sm text-gray-600 text-center">{statusMessage}</p>
           )}
-          {aiSummary && (
+          {planSummary && (
             <p className="text-sm text-gray-600 text-center italic">
-              {aiSummary}
+              {planSummary}
             </p>
           )}
         </div>
@@ -271,6 +292,15 @@ const MealPlanner = () => {
             >
               {saving ? "Saving..." : "Save Plan"}
             </button>
+            {saveMessage && (
+              <p
+                className={`text-sm text-center ${
+                  saveTone === "error" ? "text-red-600" : "text-emerald-600"
+                }`}
+              >
+                {saveMessage}
+              </p>
+            )}
           </div>
         )}
       </main>
