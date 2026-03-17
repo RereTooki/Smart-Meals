@@ -24,7 +24,7 @@ type AiMealResponse = {
 const API_KEY = process.env.AI_API_KEY;
 const OPENAI_KEY =
   process.env.OPENAI_API_KEY ||
-  "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";
+  "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";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-nano";
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
