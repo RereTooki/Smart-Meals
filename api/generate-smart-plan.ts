@@ -103,12 +103,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const key = req.headers["x-api-key"];
-  if (!API_KEY || key !== API_KEY) {
-    respond(res, 401, { error: "Invalid API key." }, req.headers.origin as string | undefined);
-    return;
-  }
-
   const payload = req.body as AiMealRequest;
   if (
     !payload ||
