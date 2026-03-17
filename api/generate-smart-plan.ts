@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import OpenAI from "openai";
 
 type AiMealRequest = {
   diet: string;
@@ -21,9 +22,11 @@ type AiMealResponse = {
 };
 
 const API_KEY = process.env.AI_API_KEY;
-const COHERE_KEY = process.env.COHERE_API_KEY;
-const COHERE_MODEL = process.env.COHERE_MODEL || "command";
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-nano";
 const ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
+
+const client = OPENAI_KEY ? new OpenAI({ apiKey: OPENAI_KEY }) : null;
 
 const buildPrompt = (data: AiMealRequest) => {
   const preferenceList = data.preferences
@@ -49,41 +52,41 @@ const respond = (res: VercelResponse, status: number, body: unknown, origin?: st
   res.status(status).json(body);
 };
 
-const callCohere = async (prompt: string) => {
-  if (!COHERE_KEY) {
-    throw new Error("COHERE_API_KEY is required.");
+const callOpenAI = async (prompt: string) => {
+  if (!client) {
+    throw new Error("OPENAI_API_KEY is required.");
   }
 
-  const response = await fetch("https://api.cohere.ai/v1/chat", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${COHERE_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: COHERE_MODEL,
-      messages: [
-        {
-          role: "system",
-          content: "You are a nutrition assistant that replies in JSON."
-        },
-        {
-          role: "user",
-          content: prompt.replace(/\\s+/g, " ").trim() || "Create a budget-friendly vegetarian plan."
-        },
-      ],
-      max_tokens: 600,
-      temperature: 0.7,
-    }),
+  const response = await client.responses.create({
+    model: OPENAI_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: "You are a nutrition assistant. Reply with strict JSON only.",
+      },
+      {
+        role: "user",
+        content:
+          prompt.replace(/\s+/g, " ").trim() ||
+          "Create a budget-friendly vegetarian plan.",
+      },
+    ],
+    temperature: 0.4,
+    max_output_tokens: 600,
   });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Cohere inference failed (${response.status}): ${body}`);
-  }
+  const text =
+    response.output
+      ?.map((item) => {
+        if (item.type === "output_text") {
+          return item.text;
+        }
+        return "";
+      })
+      .join("")
+      .trim() || "";
 
-  const data = await response.json();
-  return data.generations?.[0]?.message?.content ?? "";
+  return text;
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -126,16 +129,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const prompt = buildPrompt(payload);
 
   try {
-    const raw = (await callCohere(prompt)).trim();
+    const raw = (await callOpenAI(prompt)).trim();
     if (!raw) {
-      throw new Error("Empty response from Cohere.");
+      throw new Error("Empty response from OpenAI.");
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch (err) {
-      throw new Error(`Invalid JSON from Cohere: ${err instanceof Error ? err.message : err}`);
+      throw new Error(`Invalid JSON from OpenAI: ${err instanceof Error ? err.message : err}`);
     }
 
     const parsedObj = parsed as { meals?: AiMeal[]; summary?: string };

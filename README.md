@@ -1,6 +1,6 @@
 # Smart Meals
 
-Personalized meal planning web app built with **React + Vite**, Tailwind CSS, and Firebase services. The planner now calls a **Vercel serverless API** that asks Cohere's free-tier `command` model for diet-aware, budget-friendly meal plans and renders the structured JSON response.
+Personalized meal planning web app built with **React + Vite**, Tailwind CSS, and Firebase services. The planner now calls a **Vercel serverless API** that hits OpenAI’s Responses API (default `gpt-5.4-nano`) to generate structured, budget-aware meal plans in JSON.
 
 ## Local Setup
 
@@ -26,7 +26,7 @@ Personalized meal planning web app built with **React + Vite**, Tailwind CSS, an
 
 ## Vercel API
 
-1. `api/generate-smart-plan.ts` trusts a shared `X-API-KEY` header, then calls Cohere's text generation API (default `command`) to get a structured JSON meal plan.
+1. `api/generate-smart-plan.ts` trusts a shared `X-API-KEY` header, then calls OpenAI’s Responses endpoint (default `gpt-5.4-nano`) to get a structured JSON meal plan.
 
 2. The handler wraps the response in `{ meals, summary }` before replying to the front end.
 
@@ -38,9 +38,9 @@ Personalized meal planning web app built with **React + Vite**, Tailwind CSS, an
 
    - `AI_API_KEY` – header secret required by the API (used by the planner).
 
-   - `COHERE_API_KEY` – your Cohere inference key (free tier available).
+   - `OPENAI_API_KEY` – your OpenAI API key.
 
-   - `COHERE_MODEL` *(optional)* – override the default `command` model.
+   - `OPENAI_MODEL` *(optional)* – override the default `gpt-5.4-nano` model.
 
 3. Run `vercel --prod`; the repo now hosts both the front end and API, so the planner hits `/api/generate-smart-plan` automatically.
 
@@ -56,9 +56,9 @@ Personalized meal planning web app built with **React + Vite**, Tailwind CSS, an
 
   AI_API_KEY=<shared secret>
 
-  COHERE_API_KEY=<your Cohere key>
+  OPENAI_API_KEY=<your OpenAI API key>
 
-  COHERE_MODEL=command
+  OPENAI_MODEL=gpt-5.4-nano
 
   ```
 
@@ -68,7 +68,7 @@ Personalized meal planning web app built with **React + Vite**, Tailwind CSS, an
 
 ## Additional Notes
 
-- The Cohere call happens in `api/generate-smart-plan.ts` via fetch and enforces the shared header secret.
+- The OpenAI Responses call happens in `api/generate-smart-plan.ts` and enforces the shared header secret.
 
 - Firebase Auth/Firestore stay private while the backend only validates the shared key.
 - The planner falls back to hardcoded sample meals if the API becomes unavailable.
