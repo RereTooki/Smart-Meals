@@ -63,34 +63,32 @@ const callOpenAI = async (prompt: string) => {
 
   const response = await client.responses.create({
     model: OPENAI_MODEL,
-    messages: [
-      {
-        role: "system",
-        content: "You are a nutrition assistant. Reply with strict JSON only.",
-      },
-      {
-        role: "user",
-        content:
-          prompt.replace(/\s+/g, " ").trim() ||
-          "Create a budget-friendly vegetarian plan.",
-      },
-    ],
+    input:
+      prompt.replace(/\s+/g, " ").trim() ||
+      "Create a budget-friendly vegetarian plan.",
     temperature: 0.4,
     max_output_tokens: 600,
   });
 
-  const text =
+  const outputText =
+    response.output_text ||
     response.output
       ?.map((item) => {
-        if (item.type === "output_text") {
-          return item.text;
+        const entry = item as unknown as Record<string, unknown>;
+        if (typeof entry.text === "string") {
+          return entry.text;
+        }
+        if (typeof entry.content === "string") {
+          return entry.content;
         }
         return "";
       })
-      .join("")
-      .trim() || "";
+      .join(" ") ||
+    "";
 
-  return text;
+  console.log("OpenAI response text:", outputText);
+
+  return outputText.trim();
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
