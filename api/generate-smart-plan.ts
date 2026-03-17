@@ -24,7 +24,11 @@ type AiMealResponse = {
 const API_KEY = process.env.AI_API_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-nano";
-const ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://smart-meals-eight.vercel.app",
+];
 
 const client = OPENAI_KEY ? new OpenAI({ apiKey: OPENAI_KEY }) : null;
 
