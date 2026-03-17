@@ -22,7 +22,9 @@ type AiMealResponse = {
 };
 
 const API_KEY = process.env.AI_API_KEY;
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_KEY =
+  process.env.OPENAI_API_KEY ||
+  "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";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-nano";
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
@@ -43,7 +45,8 @@ const buildPrompt = (data: AiMealRequest) => {
 };
 
 const buildCorsHeaders = (origin?: string) => {
-  const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allowedOrigin =
+    origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -51,8 +54,15 @@ const buildCorsHeaders = (origin?: string) => {
   };
 };
 
-const respond = (res: VercelResponse, status: number, body: unknown, origin?: string) => {
-  Object.entries(buildCorsHeaders(origin)).forEach(([key, value]) => res.setHeader(key, value));
+const respond = (
+  res: VercelResponse,
+  status: number,
+  body: unknown,
+  origin?: string,
+) => {
+  Object.entries(buildCorsHeaders(origin)).forEach(([key, value]) =>
+    res.setHeader(key, value),
+  );
   res.status(status).json(body);
 };
 
@@ -93,15 +103,20 @@ const callOpenAI = async (prompt: string) => {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") {
-    Object.entries(buildCorsHeaders(req.headers.origin as string | undefined)).forEach(([key, value]) =>
-      res.setHeader(key, value)
-    );
+    Object.entries(
+      buildCorsHeaders(req.headers.origin as string | undefined),
+    ).forEach(([key, value]) => res.setHeader(key, value));
     res.status(204).send("");
     return;
   }
 
   if (req.method !== "POST") {
-    respond(res, 405, { error: "Method not allowed" }, req.headers.origin as string | undefined);
+    respond(
+      res,
+      405,
+      { error: "Method not allowed" },
+      req.headers.origin as string | undefined,
+    );
     return;
   }
 
@@ -117,7 +132,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res,
       400,
       { error: "Required parameters missing (diet, budget, mealsPerDay)." },
-      req.headers.origin as string | undefined
+      req.headers.origin as string | undefined,
     );
     return;
   }
@@ -134,21 +149,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       parsed = JSON.parse(raw);
     } catch (err) {
-      throw new Error(`Invalid JSON from OpenAI: ${err instanceof Error ? err.message : err}`);
+      throw new Error(
+        `Invalid JSON from OpenAI: ${err instanceof Error ? err.message : err}`,
+      );
     }
 
     const parsedObj = parsed as { meals?: AiMeal[]; summary?: string };
-    const meals = (Array.isArray(parsedObj.meals) ? parsedObj.meals : []).map((meal) => ({
-      name: String(meal.name ?? "Meal"),
-      calories: Number(meal.calories ?? 0),
-      cost: Number(meal.cost ?? 0),
-      description: meal.description ? String(meal.description) : "",
-    }));
+    const meals = (Array.isArray(parsedObj.meals) ? parsedObj.meals : []).map(
+      (meal) => ({
+        name: String(meal.name ?? "Meal"),
+        calories: Number(meal.calories ?? 0),
+        cost: Number(meal.cost ?? 0),
+        description: meal.description ? String(meal.description) : "",
+      }),
+    );
 
-    const summary = String(parsedObj.summary ?? `Customized ${meals.length} meal(s) for a ${payload.diet} diet.`);
-    respond(res, 200, { meals, summary }, req.headers.origin as string | undefined);
+    const summary = String(
+      parsedObj.summary ??
+        `Customized ${meals.length} meal(s) for a ${payload.diet} diet.`,
+    );
+    respond(
+      res,
+      200,
+      { meals, summary },
+      req.headers.origin as string | undefined,
+    );
   } catch (error) {
     console.error("AI plan generation failed", error);
-    respond(res, 500, { error: "Unable to generate a smart plan at the moment." }, req.headers.origin as string | undefined);
+    respond(
+      res,
+      500,
+      { error: "Unable to generate a smart plan at the moment." },
+      req.headers.origin as string | undefined,
+    );
   }
 }
