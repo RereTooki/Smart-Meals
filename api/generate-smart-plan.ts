@@ -1,5 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import OpenAI from "openai";
+import dotenv from "dotenv";
+import path from "path";
+
+dotenv.config({
+  path: path.resolve(process.cwd(), ".env.local"),
+});
 
 type AiMealRequest = {
   diet: string;
@@ -21,17 +27,24 @@ type AiMealResponse = {
   summary: string;
 };
 
-const API_KEY = process.env.AI_API_KEY;
-const OPENAI_KEY =
-  process.env.OPENAI_API_KEY ||
-  "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";
+// ✅ Use ONLY this
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-nano";
+
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:3000",
   "https://smart-meals-eight.vercel.app",
 ];
 
+// 🔍 Debug logs
+console.log("CWD:", process.cwd());
+console.log("ENV FILE KEY:", process.env.OPENAI_API_KEY);
+console.log("ENV CHECK:");
+console.log("OPENAI_API_KEY exists:", Boolean(OPENAI_KEY));
+console.log("MODEL:", OPENAI_MODEL);
+
+// ✅ Initialize client safely
 const client = OPENAI_KEY ? new OpenAI({ apiKey: OPENAI_KEY }) : null;
 
 const buildPrompt = (data: AiMealRequest) => {
@@ -41,12 +54,15 @@ const buildPrompt = (data: AiMealRequest) => {
         .join(", ")
     : "None";
 
-  return `Create ${data.mealsPerDay} balanced meals for a ${data.diet} diet that satisfies a daily budget of ${data.budget} Naira. Include cost and calories for each meal, keep descriptions concise, and respect any user preferences: ${preferenceList}. ${data.userNotes ? `Extra notes: ${data.userNotes}.` : ""} Output strictly valid JSON of the form {"meals": [{"name": "", "calories": 0, "cost": 0, "description": ""}], "summary": ""}.`;
+  return `Create ${data.mealsPerDay} balanced meals for a ${data.diet} diet that satisfies a daily budget of ${data.budget} Naira. Include cost and calories for each meal, keep descriptions concise, and respect any user preferences: ${preferenceList}. ${
+    data.userNotes ? `Extra notes: ${data.userNotes}.` : ""
+  } Output strictly valid JSON of the form {"meals": [{"name": "", "calories": 0, "cost": 0, "description": ""}], "summary": ""}.`;
 };
 
 const buildCorsHeaders = (origin?: string) => {
   const allowedOrigin =
     origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -68,7 +84,7 @@ const respond = (
 
 const callOpenAI = async (prompt: string) => {
   if (!client) {
-    throw new Error("OPENAI_API_KEY is required.");
+    throw new Error("OPENAI_API_KEY is missing.");
   }
 
   const response = await client.responses.create({
@@ -85,23 +101,21 @@ const callOpenAI = async (prompt: string) => {
     response.output
       ?.map((item) => {
         const entry = item as unknown as Record<string, unknown>;
-        if (typeof entry.text === "string") {
-          return entry.text;
-        }
-        if (typeof entry.content === "string") {
-          return entry.content;
-        }
+        if (typeof entry.text === "string") return entry.text;
+        if (typeof entry.content === "string") return entry.content;
         return "";
       })
       .join(" ") ||
     "";
 
-  console.log("OpenAI response text:", outputText);
+  console.log("OpenAI response:", outputText);
 
   return outputText.trim();
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  console.log("Handler start - key present:", Boolean(OPENAI_KEY));
+
   if (req.method === "OPTIONS") {
     Object.entries(
       buildCorsHeaders(req.headers.origin as string | undefined),
@@ -111,16 +125,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method !== "POST") {
-    respond(
+    return respond(
       res,
       405,
       { error: "Method not allowed" },
       req.headers.origin as string | undefined,
     );
-    return;
   }
 
   const payload = req.body as AiMealRequest;
+
   if (
     !payload ||
     typeof payload !== "object" ||
@@ -128,24 +142,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     typeof payload.budget !== "number" ||
     typeof payload.mealsPerDay !== "number"
   ) {
-    respond(
+    return respond(
       res,
       400,
       { error: "Required parameters missing (diet, budget, mealsPerDay)." },
       req.headers.origin as string | undefined,
     );
-    return;
   }
 
   const prompt = buildPrompt(payload);
 
   try {
     const raw = (await callOpenAI(prompt)).trim();
+
     if (!raw) {
       throw new Error("Empty response from OpenAI.");
     }
 
     let parsed: unknown;
+
     try {
       parsed = JSON.parse(raw);
     } catch (err) {
@@ -154,7 +169,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     }
 
-    const parsedObj = parsed as { meals?: AiMeal[]; summary?: string };
+    const parsedObj = parsed as {
+      meals?: AiMeal[];
+      summary?: string;
+    };
+
     const meals = (Array.isArray(parsedObj.meals) ? parsedObj.meals : []).map(
       (meal) => ({
         name: String(meal.name ?? "Meal"),
@@ -165,10 +184,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
 
     const summary = String(
-      parsedObj.summary ??
+      parsedObj.summary ||
         `Customized ${meals.length} meal(s) for a ${payload.diet} diet.`,
     );
-    respond(
+
+    return respond(
       res,
       200,
       { meals, summary },
@@ -176,7 +196,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
   } catch (error) {
     console.error("AI plan generation failed", error);
-    respond(
+
+    return respond(
       res,
       500,
       { error: "Unable to generate a smart plan at the moment." },
